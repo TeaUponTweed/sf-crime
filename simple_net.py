@@ -22,13 +22,12 @@ test_df = pd.read_csv(test_file)
 full_train_df = pd.read_csv(train_file)
 
 # Pull out desired number of training instances
-num_inputs = 1000
+num_inputs = 100000
 rand_input_vec = np.random.choice(len(full_train_df.index), num_inputs, replace=False)
 shortened_train_df = full_train_df.iloc[rand_input_vec,:]
 
 # Separate into training and validation set
-ratio_train = 0.75
-ratio_validate = 1 - ratio_train
+ratio_train = 0.75 # ratio_validate = 1 - ratio_train
 num_train = int(round(ratio_train * num_inputs))
 train_df = shortened_train_df.iloc[:num_train]
 validate_df = shortened_train_df.iloc[num_train:]
@@ -50,17 +49,6 @@ for i, date_entry in enumerate(datetime_features):
     datetime_array[i, (dt.tm_wday+58)] = dt.tm_min
     datetime_array[i, 65] = dt.tm_yday
 
-    # datetime_array[i,0] = struct_time.tm_year
-    # datetime_array[i,1] = struct_time.tm_mon
-    # datetime_array[i,2] = struct_time.tm_mday
-    # datetime_array[i,3] = struct_time.tm_hour
-    # datetime_array[i,4] = struct_time.tm_min
-    # datetime_array[i,5] = struct_time.tm_wday
-    # datetime_array[i,6] = struct_time.tm_yday
-
-# tm_year=2015, tm_mon=5, tm_mday=13, tm_hour=23, tm_min=53, tm_sec=0, tm_wday=2, tm_yday=133, tm_isdst=-1
-
-
 # print np.sum(datetime_array, axis=0)
 # print datetime_array.shape
 # print np.isnan(datetime_array).any()
@@ -72,8 +60,6 @@ X_loc_norm = (X_loc - np.mean(X_loc, axis=0)) / np.std(X_loc, axis=0)
 
 Y_loc = train_df[['Y']].values
 Y_loc_norm = (Y_loc - np.mean(Y_loc, axis=0)) / np.std(Y_loc, axis=0)
-
-# ['Monday', 'Tuesday', 'Friday', 'Wednesday', 'Thursday', 'Sunday', 'Saturday']
 
 ''' # Now getting day of week from datetime entry
 dayOfWeek_dict = { 'Sunday': 0,
@@ -91,8 +77,7 @@ for i, day in enumerate(dayOfWeek_features):
     dayOfWeek_array[i] = dayOfWeek_dict[day]
 '''
 
-# ['CENTRAL', 'NORTHERN', 'INGLESIDE', 'PARK', 'MISSION', 'TENDERLOIN', 'RICHMOND', 'TARAVAL', 'BAYVIEW', 'SOUTHERN']
-
+# Police District (Catergorical)
 PdDistricts_dict = { 'CENTRAL': 0,
                      'NORTHERN': 1,
                      'INGLESIDE': 2,
@@ -111,8 +96,8 @@ for i, dist in enumerate(PdDistricts_features):
     PdDistricts_array[i, PdDistricts_dict[dist]] = 1 
 
 # Create train data
-# X_train = np.hstack((datetime_array, PdDistricts_array, X_loc_norm, Y_loc_norm))
-X_train = np.hstack((X_loc_norm, Y_loc_norm))
+X_train = np.hstack((datetime_array, PdDistricts_array, X_loc_norm, Y_loc_norm))
+# X_train = np.hstack((X_loc_norm, Y_loc_norm))
 
 # X_train = np.hstack((X_loc, Y_loc, PdDistricts_array, datetime_array))
 # X_train_mean = np.mean(X_train, axis=0)
@@ -123,28 +108,20 @@ X_train_norm = X_train
 # X_test_col_std = (X_test - X_train_mean)/X_train_std
 Y = train_df[['Category']].values
 
-# print np.sum(X_train, axis=0)
-# exit()
-
 # Create Enumerated Crime Dictionary
 with open('../../crime_dict.json', 'r') as crime_dict:
     Y_dict = js.load(crime_dict)
 
-# Create Outputs 
-Y_num = np.zeros((len(Y),1))
-for i,key in enumerate(Y):
-    Y_num[i] = Y_dict[key[0]]
-
-# Make OneHot output
-Y_wide = np.zeros((len(Y_num),len(Y_dict)))
-for i in xrange(len(Y_num)):
-    Y_wide[i][int(Y_num[i])] = 1
+# Create Outputs (Categorical)
+Y_cat = np.zeros((len(Y), len(Y_dict)))
+for i, entry in enumerate(Y):
+    Y_cat[i][int(Y_dict[entry[0]])] = 1
 
 # Meta-Parameters
-learning_rate = 0.0001
-training_epochs = 10
+learning_rate = 0.001
+training_epochs = 100
 batch_size = 50
-display_step = 1
+display_step = 5
 
 num_hidden = 40
 n_features = X_train.shape[1]
@@ -177,9 +154,9 @@ with tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_CORES,
         batch =  np.random.choice( len(X_train), batch_size, replace=False)
         # Loop over all batches
         for i in range(total_batch):
-            sess.run(optimizer, feed_dict={x: X_train_norm[batch,:], y: Y_wide[batch,:]})
+            sess.run(optimizer, feed_dict={x: X_train_norm[batch,:], y: Y_cat[batch,:]})
             # Compute average loss
-            avg_cost += sess.run(cost, feed_dict={x: X_train_norm[batch,:], y: Y_wide[batch,:]})/total_batch
+            avg_cost += sess.run(cost, feed_dict={x: X_train_norm[batch,:], y: Y_cat[batch,:]})/total_batch
         # Display logs per epoch step
         if epoch % display_step == 0:
             print "Epoch:", '%04d' % (epoch+1), "cost =", "{:.9f}".format(avg_cost)
@@ -190,5 +167,5 @@ with tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_CORES,
     correct_prediction = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
     # Calculate accuracy
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-    print "Accuracy:", accuracy.eval({x: X_train_norm, y: Y_wide})
+    print "Accuracy:", accuracy.eval({x: X_train_norm, y: Y_cat})
 
